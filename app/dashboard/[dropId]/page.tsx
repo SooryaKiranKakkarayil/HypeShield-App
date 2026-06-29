@@ -8,9 +8,9 @@ import {
   Bot,
   CheckCircle2,
   Copy,
-  GaugeCircle,
   HelpCircle,
   PackageX,
+  RefreshCw,
   ShieldOff,
   ShieldAlert,
   Users,
@@ -19,7 +19,7 @@ import {
 import type { DropStats } from "@/lib/hypeshield-types"
 import { StatCard } from "@/components/hypeshield/stat-card"
 import { DepletionMeter } from "@/components/hypeshield/depletion-meter"
-import { launchAttackAction } from "./actions"
+import { launchAttackAction, resetDropAction } from "./actions"
 
 const POLL_INTERVAL_MS = 1500
 
@@ -59,6 +59,9 @@ export default function DashboardPage({ params }: { params: Promise<{ dropId: st
   const [isLegitRunning, setIsLegitRunning] = useState(false)
   const [legitResult, setLegitResult] = useState<SimulateAttackResult | null>(null)
   const [legitError, setLegitError] = useState<string | null>(null)
+
+  const [isResetting, setIsResetting] = useState(false)
+  const [resetError, setResetError] = useState<string | null>(null)
 
   const fetchStats = useCallback(async () => {
     abortRef.current?.abort()
@@ -116,6 +119,21 @@ export default function DashboardPage({ params }: { params: Promise<{ dropId: st
     }
   }, [dropId, fetchStats])
 
+  const resetDrop = useCallback(async () => {
+    setIsResetting(true)
+    setResetError(null)
+    try {
+      await resetDropAction(dropId)
+      setAttackResult(null)
+      setLegitResult(null)
+      await fetchStats()
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : "Reset failed")
+    } finally {
+      setIsResetting(false)
+    }
+  }, [dropId, fetchStats])
+
   useEffect(() => {
     fetchStats()
     const id = setInterval(fetchStats, POLL_INTERVAL_MS)
@@ -140,7 +158,13 @@ export default function DashboardPage({ params }: { params: Promise<{ dropId: st
         ) : !stats ? (
           <LoadingState />
         ) : (
-          <Dashboard stats={stats} staleError={error} />
+          <Dashboard
+            stats={stats}
+            staleError={error}
+            onReset={resetDrop}
+            isResetting={isResetting}
+            resetError={resetError}
+          />
         )}
       </main>
     </div>
@@ -347,7 +371,19 @@ function ScenarioCard({
   )
 }
 
-function Dashboard({ stats, staleError }: { stats: DropStats; staleError: string | null }) {
+function Dashboard({
+  stats,
+  staleError,
+  onReset,
+  isResetting,
+  resetError,
+}: {
+  stats: DropStats
+  staleError: string | null
+  onReset: () => void
+  isResetting: boolean
+  resetError: string | null
+}) {
   const sold = stats.successCount
   const isSoldOut = stats.remainingStock <= 0
 
@@ -366,8 +402,17 @@ function Dashboard({ stats, staleError }: { stats: DropStats; staleError: string
             <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Remaining Stock
             </span>
-            <GaugeCircle className="size-5 text-amber-400" aria-hidden="true" />
+            <button
+              onClick={onReset}
+              disabled={isResetting}
+              title="Reset this drop"
+              aria-label="Reset this drop"
+              className="rounded-full p-1.5 text-amber-400 transition-colors hover:bg-amber-400/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <RefreshCw className={`size-5 ${isResetting ? "animate-spin" : ""}`} aria-hidden="true" />
+            </button>
           </div>
+          {resetError ? <p className="text-xs text-red-300">{resetError}</p> : null}
           <div className="flex flex-col gap-1">
             <span
               className={`font-mono text-6xl font-bold tabular-nums sm:text-7xl ${

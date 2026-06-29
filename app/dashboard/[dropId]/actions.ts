@@ -1,9 +1,11 @@
 "use server";
 
 const ADMIN_SECRET = process.env.HYPESHIELD_ADMIN_SECRET!;
-const BASE_URL = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : "http://localhost:3000";
+const BASE_URL = process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : "http://localhost:3000";
 
 export async function launchAttackAction(
     dropId: string,

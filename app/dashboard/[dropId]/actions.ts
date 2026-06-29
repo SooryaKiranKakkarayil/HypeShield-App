@@ -7,7 +7,7 @@ const BASE_URL = process.env.VERCEL_URL
 
 export async function launchAttackAction(
     dropId: string,
-    params: { totalRequests: number; botRatio: number }
+    params: { totalRequests: number; botRatio?: number; scenario?: "mixed" | "legit_shared_ip" }
 ) {
     const res = await fetch(`${BASE_URL}/api/simulate-attack`, {
         method: "POST",

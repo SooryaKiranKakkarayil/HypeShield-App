@@ -1,6 +1,6 @@
 "use client"
 
-import { use, useCallback, useEffect, useRef, useState } from "react"
+import { use, useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import {
   Activity,
   AlertTriangle,
@@ -13,6 +13,7 @@ import {
   PackageX,
   ShieldOff,
   ShieldAlert,
+  Users,
   Zap,
 } from "lucide-react"
 import type { DropStats } from "@/lib/hypeshield-types"
@@ -24,13 +25,22 @@ const POLL_INTERVAL_MS = 1500
 
 type SimulateAttackResult = {
   dropId: string
+  scenario?: "mixed" | "legit_shared_ip"
   totalRequests: number
   humanCount: number
   obviousBotCount: number
   stealthBotCount: number
+  sharedIpHumanCount?: number
   elapsedMs: number
   tally: Record<string, number>
   byType: Record<string, Record<string, number>>
+}
+
+function countBlocked(tally: Record<string, number>) {
+  return Object.entries(tally).reduce(
+    (sum, [outcome, count]) => (outcome.startsWith("blocked") ? sum + count : sum),
+    0
+  )
 }
 
 export default function DashboardPage({ params }: { params: Promise<{ dropId: string }> }) {
@@ -41,9 +51,14 @@ export default function DashboardPage({ params }: { params: Promise<{ dropId: st
   const [isLive, setIsLive] = useState(false)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+
   const [isAttacking, setIsAttacking] = useState(false)
   const [attackResult, setAttackResult] = useState<SimulateAttackResult | null>(null)
   const [attackError, setAttackError] = useState<string | null>(null)
+
+  const [isLegitRunning, setIsLegitRunning] = useState(false)
+  const [legitResult, setLegitResult] = useState<SimulateAttackResult | null>(null)
+  const [legitError, setLegitError] = useState<string | null>(null)
 
   const fetchStats = useCallback(async () => {
     abortRef.current?.abort()
@@ -82,7 +97,24 @@ export default function DashboardPage({ params }: { params: Promise<{ dropId: st
     } finally {
       setIsAttacking(false)
     }
-}, [dropId, fetchStats])
+  }, [dropId, fetchStats])
+
+  const launchLegitBuyers = useCallback(async () => {
+    setIsLegitRunning(true)
+    setLegitError(null)
+    try {
+      const data = (await launchAttackAction(dropId, {
+        totalRequests: 6,
+        scenario: "legit_shared_ip",
+      })) as SimulateAttackResult
+      setLegitResult(data)
+      fetchStats()
+    } catch (err) {
+      setLegitError(err instanceof Error ? err.message : "Simulation failed")
+    } finally {
+      setIsLegitRunning(false)
+    }
+  }, [dropId, fetchStats])
 
   useEffect(() => {
     fetchStats()
@@ -99,10 +131,8 @@ export default function DashboardPage({ params }: { params: Promise<{ dropId: st
         <Header dropId={dropId} isLive={isLive} hasError={!!error} lastUpdated={lastUpdated} />
 
         <AttackPanel
-          isAttacking={isAttacking}
-          result={attackResult}
-          error={attackError}
-          onLaunch={launchAttack}
+          botnet={{ isAttacking, result: attackResult, error: attackError, onLaunch: launchAttack }}
+          legit={{ isAttacking: isLegitRunning, result: legitResult, error: legitError, onLaunch: launchLegitBuyers }}
         />
 
         {error && !stats ? (
@@ -181,46 +211,139 @@ function LiveIndicator({
 }
 
 function AttackPanel({
-  isAttacking,
+  botnet,
+  legit,
+}: {
+  botnet: {
+    isAttacking: boolean
+    result: SimulateAttackResult | null
+    error: string | null
+    onLaunch: () => void
+  }
+  legit: {
+    isAttacking: boolean
+    result: SimulateAttackResult | null
+    error: string | null
+    onLaunch: () => void
+  }
+}) {
+  const anyRunning = botnet.isAttacking || legit.isAttacking
+
+  return (
+    <section className="grid gap-4 sm:grid-cols-2">
+      <ScenarioCard
+        icon={Bot}
+        iconClassName="text-red-400"
+        label="Scalper Botnet Simulation"
+        buttonLabel="Launch Scalper Botnet"
+        buttonClassName="bg-red-500/90"
+        loadingLabel="Launching attack…"
+        idleDescription="Fires a mixed wave of real, obvious-bot, and stealth-bot traffic at this drop's purchase endpoint."
+        isRunning={botnet.isAttacking}
+        disabled={anyRunning}
+        result={botnet.result}
+        error={botnet.error}
+        onLaunch={botnet.onLaunch}
+        renderResult={(result) => {
+          const blocked = countBlocked(result.tally)
+          const pct = result.totalRequests ? Math.round((blocked / result.totalRequests) * 100) : 0
+          return (
+            <p className="text-sm text-muted-foreground">
+              {result.totalRequests} requests ({result.humanCount} human ·{" "}
+              {result.obviousBotCount} obvious bot · {result.stealthBotCount} stealth bot) ·{" "}
+              <span className="font-medium text-emerald-300">
+                {blocked} blocked ({pct}%)
+              </span>{" "}
+              in {result.elapsedMs}ms.
+            </p>
+          )
+        }}
+      />
+
+      <ScenarioCard
+        icon={Users}
+        iconClassName="text-teal-400"
+        label="Legit Shared-IP Buyers"
+        buttonLabel="Simulate Shared-IP Buyers"
+        buttonClassName="bg-teal-500/90"
+        loadingLabel="Sending buyers…"
+        idleDescription="Fires real-browser, human-paced traffic from a small shared-IP pool — the same NAT/office-wifi pattern your velocity check has to tell apart from a botnet."
+        isRunning={legit.isAttacking}
+        disabled={anyRunning}
+        result={legit.result}
+        error={legit.error}
+        onLaunch={legit.onLaunch}
+        renderResult={(result) => {
+          const blocked = countBlocked(result.tally)
+          const through = result.totalRequests - blocked
+          const clean = blocked === 0
+          return (
+            <p className="text-sm text-muted-foreground">
+              <span className={clean ? "font-medium text-emerald-300" : "font-medium text-amber-300"}>
+                {through} of {result.totalRequests} got through · {blocked} blocked
+              </span>{" "}
+              in {result.elapsedMs}ms — all real-browser headers sharing one IP pool.
+            </p>
+          )
+        }}
+      />
+    </section>
+  )
+}
+
+function ScenarioCard({
+  icon: Icon,
+  iconClassName,
+  label,
+  buttonLabel,
+  buttonClassName,
+  loadingLabel,
+  idleDescription,
+  isRunning,
+  disabled,
   result,
   error,
   onLaunch,
+  renderResult,
 }: {
-  isAttacking: boolean
+  icon: typeof Bot
+  iconClassName: string
+  label: string
+  buttonLabel: string
+  buttonClassName: string
+  loadingLabel: string
+  idleDescription: string
+  isRunning: boolean
+  disabled: boolean
   result: SimulateAttackResult | null
   error: string | null
   onLaunch: () => void
+  renderResult: (result: SimulateAttackResult) => ReactNode
 }) {
   return (
-    <section className="flex flex-col gap-3 rounded-2xl bg-card p-5 ring-1 ring-inset ring-white/10">
+    <div className="flex flex-col gap-3 rounded-2xl bg-card p-5 ring-1 ring-inset ring-white/10">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Bot className="size-5 text-red-400" aria-hidden="true" />
-          <span className="text-sm font-medium">Scalper Botnet Simulation</span>
+          <Icon className={`size-5 ${iconClassName}`} aria-hidden="true" />
+          <span className="text-sm font-medium">{label}</span>
         </div>
         <button
           onClick={onLaunch}
-          disabled={isAttacking}
-          className="rounded-lg bg-red-500/90 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={disabled}
+          className={`rounded-lg ${buttonClassName} px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50`}
         >
-          {isAttacking ? "Launching attack…" : "Launch Scalper Botnet"}
+          {isRunning ? loadingLabel : buttonLabel}
         </button>
       </div>
 
       {error ? (
         <p className="text-sm text-red-300">{error}</p>
       ) : result ? (
-        <p className="text-sm text-muted-foreground">
-          Last run: {result.totalRequests} requests ({result.humanCount} human ·{" "}
-          {result.obviousBotCount} obvious bot · {result.stealthBotCount} stealth bot) in{" "}
-          {result.elapsedMs}ms.
-        </p>
+        renderResult(result)
       ) : (
-        <p className="text-sm text-muted-foreground">
-          Fires a mixed wave of real, obvious-bot, and stealth-bot traffic at this drop's purchase endpoint.
-        </p>
+        <p className="text-sm text-muted-foreground">{idleDescription}</p>
       )}
-    </section>
+    </div>
   )
 }
 
@@ -237,7 +360,6 @@ function Dashboard({ stats, staleError }: { stats: DropStats; staleError: string
         </div>
       ) : null}
 
-      {/* Hero: remaining stock + depletion */}
       <section className="grid gap-4 lg:grid-cols-5">
         <div className="flex flex-col justify-between gap-4 rounded-2xl bg-card p-6 ring-1 ring-inset ring-white/10 lg:col-span-2">
           <div className="flex items-center justify-between">
@@ -266,7 +388,6 @@ function Dashboard({ stats, staleError }: { stats: DropStats; staleError: string
         </div>
       </section>
 
-      {/* Outcome breakdown */}
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-medium text-muted-foreground">Attempt Outcomes</h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">

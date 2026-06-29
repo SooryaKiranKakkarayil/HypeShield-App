@@ -22,7 +22,8 @@ const HUMAN_USER_AGENTS = [
     "Mozilla/5.0 (X11; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0",
 ];
 
-type ActorType = "human" | "obvious_bot" | "stealth_bot";
+type ActorType = "human" | "obvious_bot" | "stealth_bot" | "shared_ip_human";
+type Scenario = "mixed" | "legit_shared_ip";
 
 interface SimulatedActor {
     type: ActorType;
@@ -39,7 +40,11 @@ function randomFakeIp(): string {
     return `${Math.floor(Math.random() * 200) + 10}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
 }
 
-function buildActor(type: ActorType, botIpPool: string[]): SimulatedActor {
+function buildActor(
+    type: ActorType,
+    botIpPool: string[],
+    sharedIpPool: string[] = []
+): SimulatedActor {
     const requestId = randomUUID();
 
     if (type === "human") {
@@ -69,6 +74,24 @@ function buildActor(type: ActorType, botIpPool: string[]): SimulatedActor {
         };
     }
 
+    if (type === "shared_ip_human") {
+        // Real-browser headers, real human stagger — but funneled through the
+        // same tiny IP pool a NAT/office-wifi connection would use. This is
+        // the control case for "zero false positives on shared-IP users":
+        // same identifier pressure as the stealth bot, none of the zero-delay
+        // tell.
+        return {
+            type,
+            requestId,
+            headers: {
+                "user-agent": pick(HUMAN_USER_AGENTS),
+                "accept-language": "en-US,en;q=0.9",
+                "x-forwarded-for": pick(sharedIpPool),
+            },
+            delayMs: Math.random() * 1800 + 100,
+        };
+    }
+
     // stealth_bot: passes every header check a real browser would — only
     // catchable via velocity (shared IP pool + zero delay). Demonstrates the
     // defense isn't solely reliant on UA sniffing.
@@ -95,7 +118,12 @@ export async function POST(request: NextRequest) {
     if (authError) return authError;
 
     const body = await request.json().catch(() => ({}));
-    const { dropId, totalRequests = 300, botRatio = 0.5 } = body;
+    const {
+        dropId,
+        totalRequests = 300,
+        botRatio = 0.5,
+        scenario = "mixed",
+    }: { dropId: string; totalRequests?: number; botRatio?: number; scenario?: Scenario } = body;
 
     if (!dropId) {
         return NextResponse.json({ error: "dropId is required" }, { status: 400 });
@@ -115,16 +143,33 @@ export async function POST(request: NextRequest) {
     // sliding window. Sharing a pool simulates a real botnet's limited proxy set.
     const BOT_IP_POOL = Array.from({ length: 5 }, randomFakeIp);
 
-    const botCount = Math.round(totalRequests * botRatio);
-    const humanCount = totalRequests - botCount;
-    const obviousBotCount = Math.round(botCount * 0.6);
-    const stealthBotCount = botCount - obviousBotCount;
+    // 2 IPs — small enough to read as one NAT egress, not so small it's
+    // obviously synthetic.
+    const SHARED_IP_POOL = Array.from({ length: 2 }, randomFakeIp);
 
-    const actors: SimulatedActor[] = [
-        ...Array.from({ length: humanCount }, () => buildActor("human", BOT_IP_POOL)),
-        ...Array.from({ length: obviousBotCount }, () => buildActor("obvious_bot", BOT_IP_POOL)),
-        ...Array.from({ length: stealthBotCount }, () => buildActor("stealth_bot", BOT_IP_POOL)),
-    ];
+    let humanCount = 0;
+    let obviousBotCount = 0;
+    let stealthBotCount = 0;
+    let sharedIpHumanCount = 0;
+    let actors: SimulatedActor[];
+
+    if (scenario === "legit_shared_ip") {
+        sharedIpHumanCount = totalRequests;
+        actors = Array.from({ length: totalRequests }, () =>
+            buildActor("shared_ip_human", BOT_IP_POOL, SHARED_IP_POOL)
+        );
+    } else {
+        const botCount = Math.round(totalRequests * botRatio);
+        humanCount = totalRequests - botCount;
+        obviousBotCount = Math.round(botCount * 0.6);
+        stealthBotCount = botCount - obviousBotCount;
+
+        actors = [
+            ...Array.from({ length: humanCount }, () => buildActor("human", BOT_IP_POOL)),
+            ...Array.from({ length: obviousBotCount }, () => buildActor("obvious_bot", BOT_IP_POOL)),
+            ...Array.from({ length: stealthBotCount }, () => buildActor("stealth_bot", BOT_IP_POOL)),
+        ];
+    }
 
     const startedAt = Date.now();
 
@@ -164,6 +209,7 @@ export async function POST(request: NextRequest) {
         human: {},
         obvious_bot: {},
         stealth_bot: {},
+        shared_ip_human: {},
     };
 
     for (const r of results) {
@@ -173,10 +219,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
         dropId,
+        scenario,
         totalRequests,
         humanCount,
         obviousBotCount,
         stealthBotCount,
+        sharedIpHumanCount,
         elapsedMs,
         tally,
         byType,

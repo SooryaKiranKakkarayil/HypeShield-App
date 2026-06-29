@@ -1,65 +1,104 @@
-import Image from "next/image";
+import Link from "next/link"
+import { Space_Grotesk } from "next/font/google"
+import { ShieldAlert, Zap, Fingerprint, Users, ArrowRight } from "lucide-react"
+import { LiveTicker } from "@/components/hypeshield/live-ticker"
+
+const display = Space_Grotesk({ subsets: ["latin"], weight: ["500", "700"] })
+
+const DASHBOARD_HREF = "/dashboard/test-drop-1" // change if your seeded slug differs
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <div className="dark min-h-dvh bg-background text-foreground">
+      <main className="mx-auto flex max-w-6xl flex-col gap-16 px-4 py-10 sm:px-6 sm:py-16">
+        {/* Hero */}
+        <section className="grid gap-10 lg:grid-cols-2 lg:items-center">
+          <div className="flex flex-col gap-6">
+            <div className="inline-flex w-fit items-center gap-2 rounded-full bg-card px-3 py-1.5 ring-1 ring-inset ring-white/10">
+              <ShieldAlert className="size-4 text-amber-400" aria-hidden="true" />
+              <span className="text-xs font-medium tracking-wide text-muted-foreground">
+                H0 Hackathon · Flash-Sale Defense
+              </span>
+            </div>
+
+            <h1
+              className={`${display.className} text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl`}
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+              Bots check out in
+              <span className="text-red-400"> milliseconds.</span>
+              <br />
+              Real buyers don&apos;t.
+            </h1>
+
+            <p className="max-w-md text-base leading-7 text-muted-foreground">
+              HypeShield scores every purchase attempt in real time — request velocity, browser
+              headers, identifier pressure — and blocks scalper bots before they touch your
+              inventory, without throttling shoppers on shared office or campus IPs.
+            </p>
+
+            <div>
+              <Link
+                href={DASHBOARD_HREF}
+                className="inline-flex items-center gap-2 rounded-lg bg-teal-500/90 px-5 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                Open live dashboard
+                <ArrowRight className="size-4" aria-hidden="true" />
+              </Link>
+            </div>
+          </div>
+
+          <LiveTicker />
+        </section>
+
+        {/* How it decides */}
+        <section className="flex flex-col gap-6 border-t border-white/10 pt-10">
+          <h2 className="text-sm font-medium text-muted-foreground">How a request gets judged</h2>
+          <div className="grid gap-6 sm:grid-cols-3">
+            <MethodRow
+              icon={Zap}
+              iconClassName="text-amber-400"
+              title="Velocity"
+              description="Five requests per second per identifier. Past that, the window closes."
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+            <MethodRow
+              icon={Fingerprint}
+              iconClassName="text-red-400"
+              title="Headers"
+              description="Headless browsers and missing accept-language get flagged before they reach inventory."
+            />
+            <MethodRow
+              icon={Users}
+              iconClassName="text-teal-400"
+              title="Identifier pressure"
+              description="A shared IP isn't penalized on its own — only when it's paired with bot-speed timing."
+            />
+          </div>
+        </section>
+
+        <footer className="border-t border-white/10 pt-6 text-xs text-muted-foreground">
+          Built for H0: Hack the Zero Stack with Vercel v0 and AWS Databases.
+        </footer>
       </main>
     </div>
-  );
+  )
+}
+
+function MethodRow({
+  icon: Icon,
+  iconClassName,
+  title,
+  description,
+}: {
+  icon: typeof Zap
+  iconClassName: string
+  title: string
+  description: string
+}) {
+  return (
+    <div className="flex flex-col gap-2 rounded-2xl bg-card p-5 ring-1 ring-inset ring-white/10">
+      <Icon className={`size-5 ${iconClassName}`} aria-hidden="true" />
+      <h3 className="text-sm font-semibold">{title}</h3>
+      <p className="text-sm leading-6 text-muted-foreground">{description}</p>
+    </div>
+  )
 }
